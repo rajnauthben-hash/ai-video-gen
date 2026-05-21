@@ -1,7 +1,5 @@
 import { useState } from "react";
 
-const HF_TOKEN = "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";
-const HF_MODEL = "https://api-inference.huggingface.co/models/ali-vilab/text-to-video-ms-1.7b";
 const MAX_RETRIES = 12;
 
 const STYLES = ["Cinematic","Realistic","Luxury Ad","Product Ad","Social Reel","Cartoon","Anime","Documentary"];
@@ -12,37 +10,24 @@ function gid() { return Math.random().toString(36).slice(2, 8); }
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 async function fetchVideo(finalPrompt, onStatus, attempt = 1) {
-  const res = await fetch(HF_MODEL, {
+  const res = await fetch("/api/generate", {
     method: "POST",
-    headers: {
-      "Authorization": `Bearer ${HF_TOKEN}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ inputs: finalPrompt }),
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt: finalPrompt }),
   });
 
-  // Model is still loading — wait the suggested time and retry
   if (res.status === 503) {
     if (attempt > MAX_RETRIES) throw new Error("Model is taking too long to load. Please try again in a few minutes.");
-    let waitSec = 20;
-    try {
-      const json = await res.json();
-      if (json.estimated_time) waitSec = Math.ceil(json.estimated_time);
-    } catch (_) { /* ignore parse errors */ }
-    waitSec = Math.min(waitSec, 30);
+    const json = await res.json().catch(() => ({}));
+    const waitSec = Math.min(Math.ceil(json.estimated_time || 20), 30);
     onStatus(`⏳ Model warming up… retrying in ${waitSec}s (attempt ${attempt}/${MAX_RETRIES})`);
     await sleep(waitSec * 1000);
     return fetchVideo(finalPrompt, onStatus, attempt + 1);
   }
 
   if (!res.ok) {
-    const ct = res.headers.get("content-type") || "";
-    if (ct.includes("application/json")) {
-      const json = await res.json().catch(() => ({}));
-      throw new Error(json.error || `Server error ${res.status}`);
-    }
-    const txt = await res.text();
-    throw new Error(`Error ${res.status}: ${txt.slice(0, 200)}`);
+    const json = await res.json().catch(() => ({}));
+    throw new Error(json.error || `Server error ${res.status}`);
   }
 
   return res;
